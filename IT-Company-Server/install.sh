@@ -99,19 +99,32 @@ interactive_service_selection() {
         checklist_args+=("$service" "${SERVICES[$service]}" "OFF")
     done
     
-    # Show whiptail dialog
+    # Show whiptail dialog and capture output
     local choices
-    choices=$(whiptail "${checklist_args[@]}" 3>&1 1>&2 2>&3)
-    local exitstatus=$?
-    
-    if [ $exitstatus -ne 0 ]; then
+    choices=$(whiptail "${checklist_args[@]}" 3>&1 1>&2 2>&3) || {
         echo -e "${RED}Installation cancelled.${RESET}"
         exit 0
-    fi
+    }
     
     # Parse selected services
     SELECTED_SERVICES=()
-    local selected_array=($(echo "$choices" | tr ' ' '\n' | grep -v '^$'))
+    
+    # Check if choices is empty
+    if [[ -z "$choices" ]]; then
+        echo -e "${RED}No services selected. Please run the script again.${RESET}"
+        exit 0
+    fi
+    
+    # Convert output to array (whiptail returns quoted strings separated by spaces)
+    local selected_array=()
+    while IFS= read -r line; do
+        # Remove surrounding quotes if present
+        line="${line%\"}"
+        line="${line#\"}"
+        if [[ -n "$line" ]]; then
+            selected_array+=("$line")
+        fi
+    done <<< "$(echo "$choices" | sed 's/" "/\n/g')"
     
     # Check if ALL is selected
     if [[ " ${selected_array[@]} " =~ " ALL " ]]; then
@@ -121,9 +134,7 @@ interactive_service_selection() {
         done
     else
         # Add individual selections
-        for service in "${selected_array[@]}"; do
-            SELECTED_SERVICES+=("$service")
-        done
+        SELECTED_SERVICES=("${selected_array[@]}")
     fi
     
     if [[ ${#SELECTED_SERVICES[@]} -eq 0 ]]; then
