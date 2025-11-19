@@ -25,14 +25,21 @@ RESET='\033[0m'
 # Service Configuration
 ################################################################################
 
+# Services for IT Company Server: business-focused infrastructure
 declare -A SERVICES=(
-    [jellyfin]="Jellyfin - Open-source media system"
-    [nextcloud]="Nextcloud - Self-hosted cloud storage"
+    [tailscale]="Tailscale - Secure WireGuard-based VPN"
+    [docker]="Docker - Container platform for applications"
+    [samba]="Samba - Windows-compatible file server"
+    [nginx]="Nginx - Reverse proxy and web server"
+    [netdata]="Netdata - Real-time system monitoring"
 )
 
 declare -A SERVICE_DESCRIPTIONS=(
-    [jellyfin]="Stream media (music, films, TV) from your own server. Open-source alternative to Plex."
-    [nextcloud]="Self-hosted cloud storage with file sync and collaboration. Similar to Dropbox or Google Drive."
+    [tailscale]="Connect remote offices securely. Encrypted mesh network without port forwarding."
+    [docker]="Run containerized applications for consistent deployment across environments."
+    [samba]="Share folders with Windows/macOS/Linux clients. AD integration available."
+    [nginx]="Load balance, reverse proxy, and secure internal web services."
+    [netdata]="Monitor CPU, disk, memory, network in real-time with beautiful dashboards."
 )
 
 declare -a SELECTED_SERVICES=()
@@ -51,7 +58,7 @@ print_header() {
     echo -e "${RESET}"
 }
 
-# Verifies script is running as root and Proxmox tools are installed
+# Verifies script is running as root and required tools are installed
 check_prerequisites() {
     echo -e "${YELLOW}Checking prerequisites...${RESET}"
     
@@ -66,7 +73,74 @@ check_prerequisites() {
         exit 1
     fi
     
+    # Check if whiptail is installed for dialog
+    if ! command -v whiptail &> /dev/null; then
+        echo -e "${RED}Error: whiptail is not installed${RESET}"
+        echo -e "${YELLOW}Install it with: apt-get install whiptail${RESET}"
+        exit 1
+    fi
+    
     echo -e "${GREEN}✓ Prerequisites met${RESET}"
+}
+
+# Displays service information before selection
+show_service_info() {
+    clear
+    print_header
+    echo -e "${BLUE}=== Available Services ===${RESET}"
+    echo ""
+    
+    for service in "${!SERVICE_DESCRIPTIONS[@]}"; do
+        echo -e "${BLUE}• ${SERVICES[$service]}${RESET}"
+        echo "  ${SERVICE_DESCRIPTIONS[$service]}"
+        echo ""
+    done
+    
+    sleep 2
+}
+
+# Uses whiptail to present an interactive checklist for service selection
+interactive_service_selection() {
+    # Build whiptail checklist dynamically from SERVICES array
+    local checklist_args=("--title" "Select Services" \
+                          "--checklist" \
+                          "Use SPACE to select, ENTER to confirm" \
+                          "20" "70" "10")
+    
+    for service in "${!SERVICES[@]}"; do
+        checklist_args+=("$service" "${SERVICES[$service]}" "OFF")
+    done
+    
+    # Show whiptail dialog
+    local choices
+    choices=$(whiptail "${checklist_args[@]}" 3>&1 1>&2 2>&3)
+    local exitstatus=$?
+    
+    if [ $exitstatus -ne 0 ]; then
+        echo -e "${RED}Installation cancelled.${RESET}"
+        exit 0
+    fi
+    
+    # Parse selected services
+    SELECTED_SERVICES=()
+    while IFS= read -r service; do
+        SELECTED_SERVICES+=("$service")
+    done <<< "$(echo "$choices" | tr ' ' '\n' | grep -v '^$')"
+    
+    if [[ ${#SELECTED_SERVICES[@]} -eq 0 ]]; then
+        echo -e "${RED}No services selected. Please run the script again.${RESET}"
+        exit 0
+    fi
+    
+    # Show confirmation
+    clear
+    print_header
+    echo -e "${GREEN}Selected services:${RESET}"
+    for service in "${SELECTED_SERVICES[@]}"; do
+        echo "  ✓ ${SERVICES[$service]}"
+    done
+    echo ""
+    sleep 1
 }
 
 # Prints available services with their descriptions and numbering
@@ -92,120 +166,6 @@ show_service_menu() {
     done
 }
 
-# Prompts user to select services using arrow keys and spacebar
-interactive_service_selection() {
-    echo -e "${BLUE}=== Service Selection ===${RESET}"
-    show_service_menu
-    
-    local services_array=()
-    for service in "${!SERVICES[@]}"; do
-        services_array+=("$service")
-    done
-    
-    local selected_indices=()
-    local current_index=0
-    
-    while true; do
-        # Clear previous output
-        clear
-        print_header
-        
-        echo -e "${YELLOW}Use arrow keys to navigate, spacebar to select, Enter to confirm:${RESET}"
-        echo ""
-        
-        # Draw selection box
-        echo "┌────────────────────────────────────────────────────────────┐"
-        echo "│ Choose Services:                                           │"
-        echo "├────────────────────────────────────────────────────────────┤"
-        
-        for i in "${!services_array[@]}"; do
-            local service="${services_array[$i]}"
-            local is_selected=false
-            
-            for idx in "${selected_indices[@]}"; do
-                if [[ $idx -eq $i ]]; then
-                    is_selected=true
-                    break
-                fi
-            done
-            
-            if [[ $i -eq $current_index ]]; then
-                if $is_selected; then
-                    printf "│ ${GREEN}❯ [✓] %-50s${RESET}│\n" "${SERVICES[$service]}"
-                else
-                    printf "│ ${BLUE}❯ [ ] %-50s${RESET}│\n" "${SERVICES[$service]}"
-                fi
-            else
-                if $is_selected; then
-                    printf "│   ${GREEN}[✓] %-50s${RESET}│\n" "${SERVICES[$service]}"
-                else
-                    printf "│   [ ] %-50s│\n" "${SERVICES[$service]}"
-                fi
-            fi
-        done
-        
-        echo "├────────────────────────────────────────────────────────────┤"
-        printf "│ Selected: %-52s│\n" "${SELECTED_SERVICES[*]:-None}"
-        echo "└────────────────────────────────────────────────────────────┘"
-        echo ""
-        
-        # Read single key input
-        local key
-        read -rsn1 key 2>/dev/null || key=""
-        
-        case "$key" in
-            $'\x1b')  # Arrow key pressed
-                read -rsn2 key 2>/dev/null || key=""
-                case "$key" in
-                    '[A')  # Up arrow
-                        ((current_index--))
-                        if [[ $current_index -lt 0 ]]; then
-                            current_index=$((${#services_array[@]} - 1))
-                        fi
-                        ;;
-                    '[B')  # Down arrow
-                        ((current_index++))
-                        if [[ $current_index -ge ${#services_array[@]} ]]; then
-                            current_index=0
-                        fi
-                        ;;
-                esac
-                ;;
-            ' ')  # Spacebar
-                local service="${services_array[$current_index]}"
-                local is_selected=false
-                local new_selected=()
-                
-                for idx in "${selected_indices[@]}"; do
-                    if [[ $idx -eq $current_index ]]; then
-                        is_selected=true
-                    else
-                        new_selected+=("$idx")
-                    fi
-                done
-                
-                if ! $is_selected; then
-                    new_selected+=("$current_index")
-                fi
-                
-                selected_indices=("${new_selected[@]}")
-                SELECTED_SERVICES=()
-                for idx in "${selected_indices[@]}"; do
-                    SELECTED_SERVICES+=("${services_array[$idx]}")
-                done
-                ;;
-            '')  # Enter key
-                if [[ ${#SELECTED_SERVICES[@]} -eq 0 ]]; then
-                    echo -e "${RED}Please select at least one service${RESET}"
-                    sleep 1
-                else
-                    break
-                fi
-                ;;
-        esac
-    done
-}
-
 # Loops through selected services and executes their individual installation scripts
 deploy_services() {
     echo ""
@@ -218,7 +178,7 @@ deploy_services() {
         echo ""
         echo -e "${BLUE}[$current/$total] Installing ${SERVICES[$service]}...${RESET}"
         
-        local service_script="${SCRIPT_DIR}/scripts/services/${service}.sh"
+        local service_script="$(cd "$SCRIPT_DIR" && cd .. && pwd)/scripts/services/${service}.sh"
         
         if [[ ! -f "$service_script" ]]; then
             echo -e "${RED}Error: Service script not found: $service_script${RESET}"
@@ -241,16 +201,18 @@ deploy_services() {
 main() {
     print_header
     check_prerequisites
+    show_service_info
     interactive_service_selection
     deploy_services
     
     echo ""
     echo -e "${BLUE}=== Installation Complete ===${RESET}"
-    echo -e "${GREEN}All services have been deployed!${RESET}"
+    echo -e "${GREEN}All selected services have been deployed!${RESET}"
     echo ""
     echo -e "${YELLOW}Next steps:${RESET}"
     echo "  1. Access services through your network"
     echo "  2. Configure firewall rules as needed"
+    echo "  3. Set up SSL certificates for web-facing services"
     echo ""
     echo "For help, see: README.md"
 }
