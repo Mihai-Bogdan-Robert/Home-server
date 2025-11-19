@@ -13,7 +13,7 @@ This project is designed for users who want to:
 ## Quick Start
 
 ```bash
-sudo bash install.sh
+bash <(curl -s https://raw.githubusercontent.com/Mihai-Bogdan-Robert/Home-server/main/install.sh)
 ```
 
 This will launch an interactive menu where you can select which services you want to deploy.
