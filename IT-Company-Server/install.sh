@@ -111,16 +111,20 @@ interactive_service_selection() {
     
     # Parse selected services
     SELECTED_SERVICES=()
-    while IFS= read -r service; do
+    local selected_array=($(echo "$choices" | tr ' ' '\n' | grep -v '^$'))
+    
+    # Check if ALL is selected
+    if [[ " ${selected_array[@]} " =~ " ALL " ]]; then
         # If ALL is selected, add all services
-        if [[ "$service" == "ALL" ]]; then
-            for svc in "${!SERVICES[@]}"; do
-                SELECTED_SERVICES+=("$svc")
-            done
-        else
+        for svc in "${!SERVICES[@]}"; do
+            SELECTED_SERVICES+=("$svc")
+        done
+    else
+        # Add individual selections
+        for service in "${selected_array[@]}"; do
             SELECTED_SERVICES+=("$service")
-        fi
-    done <<< "$(echo "$choices" | tr ' ' '\n' | grep -v '^$')"
+        done
+    fi
     
     if [[ ${#SELECTED_SERVICES[@]} -eq 0 ]]; then
         echo -e "${RED}No services selected. Please run the script again.${RESET}"
